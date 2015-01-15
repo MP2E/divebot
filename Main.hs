@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 import Data.List
 import Network
 import System.IO
@@ -5,6 +6,7 @@ import System.Exit
 import System.Time
 import Control.Arrow
 import Control.Monad.Reader
+import Control.Monad.State
 import Control.Exception
 import Text.Printf
 
@@ -13,16 +15,17 @@ port   = 6667
 chan   = "#mp2e-testing"
 nick   = "divebot"
 
--- The 'Net' monad, a wrapper over IO, carrying the bot's immutable state.
-type Net = ReaderT Bot IO
+-- The 'Net' monad, a wrapper over Reader, State, and IO.
+type Net = ReaderT Bot (StateT ChatLog IO)
 data Bot = Bot { socket :: Handle, starttime :: ClockTime }
+type ChatLog = String
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
-main = bracket connect disconnect loop
+main = bracket connect disconnect (loop [])
   where
-    disconnect = hClose . socket
-    loop st    = runReaderT run st
+    disconnect   = hClose . socket
+    loop st r    = evalStateT (runReaderT run r) st
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -41,7 +44,7 @@ connect = notify $ do
 run :: Net ()
 run = do
     write "NICK" nick
-    write "USER" (nick++" 0 * :tutorial bot")
+    write "USER" (nick++" 0 * :MP2E's bot") -- if modifying the user description, only modify after the :
     write "JOIN" chan
     asks socket >>= listen
 
@@ -61,8 +64,9 @@ listen h = forever $ do
 eval :: String -> Net ()
 eval     "!quit"               = write "QUIT" ":Exiting" >> io (exitWith ExitSuccess)
 eval     "!uptime"             = uptime >>= privmsg
+eval     "!getstate"           = get >>= (io . putStr) -- debug function, print chatlog to stdout
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval     _                     = return () -- ignore everything else
+eval x                         = modify (++ (x ++ "\n")) -- log chat input, line by line
 
 
 uptime :: Net String
@@ -74,7 +78,7 @@ uptime = do
 -- Pretty print the date in '1d 9h 9m 17s' format
 pretty :: TimeDiff -> String
 pretty td =
-  unwords $ map (uncurry (++) . first show) $
+  unwords $ fmap (uncurry (++) . first show) $
   if null diffs then [(0,"s")] else diffs
   where merge (tot,acc) (sec,typ) = let (sec',tot') = divMod tot sec
                                     in (tot',(sec',typ):acc)
