@@ -35,10 +35,9 @@ connect = notify $ do
     hSetBuffering h NoBuffering
     return (Bot h t)
   where
-    notify a = bracket_
+    notify = bracket_
         (printf "Connecting to %s ... " server >> hFlush stdout)
         (putStrLn "done.")
-        a
 
 -- Join a channel, and start processing commands
 run :: Net ()
@@ -55,19 +54,21 @@ listen h = forever $ do
     io (putStrLn s)
     if ping s then pong s else eval (clean s)
   where
-    forever a = a >> forever a
-    clean     = drop 1 . dropWhile (/= ':') . drop 1
-    ping x    = "PING :" `isPrefixOf` x
-    pong x    = write "PONG" (':' : drop 6 x)
+    clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
+    ping x        = "PING :" `isPrefixOf` x
+    pong x        = write "PONG" (':' : drop 6 x)
+    cleanStatus x = if cleanPred x then [] else x
+    cleanPred x   = ( drop 3 server `isInfixOf` x ) || ( (nick ++ "!~" ++ nick) `isInfixOf` x )
+                    || ( "JOIN :" `isInfixOf` x )
 
 -- Dispatch a command
 eval :: String -> Net ()
-eval     "!quit"               = write "QUIT" ":Exiting" >> io (exitWith ExitSuccess)
+eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
 eval     "!uptime"             = uptime >>= privmsg
-eval     "!getstate"           = get >>= (io . putStr) -- debug function, print chatlog to stdout
+eval     "!getstate"           = get >>= (io . putStr)   -- debug function, print chatlog to stdout
+eval []                        = return ()               -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
 eval x                         = modify (++ (x ++ "\n")) -- log chat input, line by line
-
 
 uptime :: Net String
 uptime = do
