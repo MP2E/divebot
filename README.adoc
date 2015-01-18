@@ -1,0 +1,12 @@
+= divebot: a simple Haskell IRC Bot
+
+Based off of https://www.haskell.org/haskellwiki/Roll_your_own_IRC_bot[Roll your own IRC bot],
+this project is simply for fun, and to get a stronger grasp of Monad Transformers and sequencing
+IO effects. I'd also like to use QuickCheck to prove properties, and migrate over to Text and use
+criterion to benchmark the difference(learning those in the process, as well)
+
+== Planned features
+- Markov bot
+- set of useful commands for channel/bot management
+- watch git repos and report on commits
+- simple Haskell evaluator?

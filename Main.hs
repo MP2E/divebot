@@ -4,11 +4,11 @@ import Network
 import System.IO
 import System.Exit
 import System.Time
-import Control.Arrow
+import Control.Arrow (first)
 import Control.Monad.Reader
 import Control.Monad.State
-import Control.Exception
-import Text.Printf
+import Control.Exception (bracket,bracket_)
+import Text.Printf (hPrintf,printf)
 
 server = "irc.oftc.net"
 port   = 6667
@@ -22,10 +22,10 @@ type ChatLog = String
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
-main = bracket connect disconnect (loop [])
+main = bracket connect disconnect loop
   where
-    disconnect   = hClose . socket
-    loop st r    = evalStateT (runReaderT run r) st
+    disconnect = hClose . socket
+    loop r     = evalStateT (runReaderT run r) []
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -54,12 +54,12 @@ listen h = forever $ do
     io (putStrLn s)
     if ping s then pong s else eval (clean s)
   where
-    clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
-    cleanStatus x = if cleanPred x then [] else x
+    clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
+    cleanStatus x = if cleanPred x then [] else x -- remove joins, mode changes, and server notifications
     cleanPred x   = ( drop 3 server `isInfixOf` x ) || ( (nick ++ "!~" ++ nick) `isInfixOf` x )
-                    || ( "JOIN :" `isInfixOf` x )
+                    || ( "JOIN :" `isInfixOf` x ) -- "PART" is not in the predicates because clean already removes them
 
 -- Dispatch a command
 eval :: String -> Net ()
