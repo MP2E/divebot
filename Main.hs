@@ -1,16 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 import Data.List
-import Data.Maybe (maybeToList)
 import Network
 import System.IO
 import System.Exit
 import System.Time
-import Control.Arrow (first)
 import Control.Applicative
-import Control.Monad.Reader
 import Control.Monad.State
-import Control.Exception (bracket,bracket_)
+import Control.Monad.Reader
+import Control.Arrow (first)
+import Control.Monad (unless)
+import Data.Maybe (maybeToList)
 import Text.Printf (hPrintf,printf)
+import Control.Exception (bracket,bracket_)
 import qualified Data.Map.Strict as Map
 
 server = "irc.oftc.net"
@@ -75,23 +76,24 @@ eval x                         = (insertMarkov . words) x
 
 -- create the markov chain and store it in our ChatMap
 insertMarkov :: [String] -> Net ()
-insertMarkov (x:[]) = return ()
-insertMarkov (x:xs) = if null value then return () else do
-    modify $ Map.insertWithKey mergeValues key value
-    insertMarkov xs
-  where key            = x : (head xs) : []
+insertMarkov [x]    = return ()
+insertMarkov (x:xs) = unless (null value) $
+    do modify $ Map.insertWithKey mergeValues key value
+       insertMarkov xs
+  where key            = [x, head xs]
         value          = xs `chatIndex` 1
         chatIndex xs i = maybeToList $ safeIndex xs i
 
--- ignore key, check if the value we're adding is already in the Map
+-- ignore key passed from Map.insertWithKey, check if the value we're adding is already in the Map
 mergeValues :: a -> [String] -> [String] -> [String]
 mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
 
 -- safe version of (!!)
 safeIndex :: [a] -> Int -> Maybe a
-safeIndex []     _          = Nothing
-safeIndex (x:xs) n | n <= 0 = Just x
-safeIndex (x:xs) n          = safeIndex xs (n-1)
+safeIndex []     _         = Nothing
+safeIndex _      n | n < 0 = Nothing
+safeIndex (x:_)  0         = Just x
+safeIndex (_:xs) n         = safeIndex xs (n-1)
 
 uptime :: Net String
 uptime = do
