@@ -5,10 +5,12 @@ import System.IO
 import System.Exit
 import System.Time
 import Control.Arrow (first)
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Exception (bracket,bracket_)
 import Text.Printf (hPrintf,printf)
+import qualified Data.Map.Strict as Map
 
 server = "irc.oftc.net"
 port   = 6667
@@ -16,16 +18,16 @@ chan   = "#mp2e-testing"
 nick   = "divebot"
 
 -- The 'Net' monad, a wrapper over Reader, State, and IO.
-type Net = ReaderT Bot (StateT ChatLog IO)
+type Net = ReaderT Bot (StateT ChatMap IO)
 data Bot = Bot { socket :: Handle, starttime :: ClockTime }
-type ChatLog = String
+type ChatMap = Map.Map [String] [String]
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
 main = bracket connect disconnect loop
   where
     disconnect = hClose . socket
-    loop r     = evalStateT (runReaderT run r) []
+    loop r     = evalStateT (runReaderT run r) Map.empty
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -65,10 +67,29 @@ listen h = forever $ do
 eval :: String -> Net ()
 eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
 eval     "!uptime"             = uptime >>= privmsg
-eval     "!getstate"           = get >>= (io . putStr)   -- debug function, print chatlog to stdout
-eval []                        = return ()               -- ignore, empty list indicates a status line
+eval     "!getstate"           = get >>= (io . putStr . (++"\n") . show) -- debug function, print chatlog to stdout
+eval []                        = return ()                               -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval x                         = modify (++ (x ++ "\n")) -- log chat input, line by line
+eval x                         = (insertMarkov . words) x
+
+-- create the markov chain and store it in our ChatMap
+insertMarkov :: [String] -> Net ()
+insertMarkov (x:[]) = return ()
+insertMarkov (x:xs) = if null value then return () else do
+    modify $ Map.insertWithKey mergeValues key value
+    insertMarkov xs
+  where key               = x : (head xs) : []
+        value             = xs `chatIndex` 1
+
+-- ignore key, check if the value we're adding is already in the Map
+mergeValues :: a -> [String] -> [String] -> [String]
+mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
+
+-- grabs the word specified by the index, returns end-of-line
+chatIndex :: [String] -> Int -> [String]
+chatIndex []     _          = []
+chatIndex (x:xs) n | n <= 0 = [x]
+chatIndex (x:xs) n          = chatIndex xs (n-1)
 
 uptime :: Net String
 uptime = do
