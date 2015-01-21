@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 import Data.List
+import Data.Maybe (maybeToList)
 import Network
 import System.IO
 import System.Exit
@@ -78,18 +79,19 @@ insertMarkov (x:[]) = return ()
 insertMarkov (x:xs) = if null value then return () else do
     modify $ Map.insertWithKey mergeValues key value
     insertMarkov xs
-  where key               = x : (head xs) : []
-        value             = xs `chatIndex` 1
+  where key            = x : (head xs) : []
+        value          = xs `chatIndex` 1
+        chatIndex xs i = maybeToList $ safeIndex xs i
 
 -- ignore key, check if the value we're adding is already in the Map
 mergeValues :: a -> [String] -> [String] -> [String]
 mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
 
--- grabs the word specified by the index, returns end-of-line
-chatIndex :: [String] -> Int -> [String]
-chatIndex []     _          = []
-chatIndex (x:xs) n | n <= 0 = [x]
-chatIndex (x:xs) n          = chatIndex xs (n-1)
+-- safe version of (!!)
+safeIndex :: [a] -> Int -> Maybe a
+safeIndex []     _          = Nothing
+safeIndex (x:xs) n | n <= 0 = Just x
+safeIndex (x:xs) n          = safeIndex xs (n-1)
 
 uptime :: Net String
 uptime = do
