@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 import Data.List
 import Network
 import System.IO
@@ -19,7 +18,7 @@ port   = 6667
 chan   = "#mp2e-testing"
 nick   = "divebot"
 
--- The 'Net' monad, a wrapper over Reader, State, and IO.
+-- The 'Net' type, a wrapper over Reader, State, and IO.
 type Net = ReaderT Bot (StateT ChatMap IO)
 data Bot = Bot { socket :: Handle, starttime :: ClockTime }
 type ChatMap = Map.Map [String] [String]
@@ -63,26 +62,26 @@ listen h = forever $ do
     clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
     cleanStatus x = if cleanPred x then [] else x -- remove joins, mode changes, and server notifications
     cleanPred x   = ( drop 3 server `isInfixOf` x ) || ( (nick ++ "!~" ++ nick) `isInfixOf` x )
-                    || ( "JOIN :" `isInfixOf` x ) -- "PART" is not in the predicates because clean already removes them
+                    || ( "JOIN :" `isInfixOf` x ) -- "dropWhile (/= ':')" in clean removes PARTs
 
 -- Dispatch a command
 eval :: String -> Net ()
 eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
 eval     "!uptime"             = uptime >>= privmsg
-eval     "!getstate"           = get >>= (io . putStr . (++"\n") . show) -- debug function, print chatlog to stdout
+eval     "!getstate"           = get >>= (io . putStr . (++"\n") . show) -- debug function, print markov chain to stdout
 eval []                        = return ()                               -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval x                         = (insertMarkov . words) x
+eval x                         = (createMarkov . words) x
 
 -- create the markov chain and store it in our ChatMap
-insertMarkov :: [String] -> Net ()
-insertMarkov [x]    = return ()
-insertMarkov (x:xs) = unless (null value) $
+createMarkov :: [String] -> Net ()
+createMarkov [x]    = modify $ Map.insert [x] []
+createMarkov (x:xs) = unless (null value) $
     do modify $ Map.insertWithKey mergeValues key value
-       insertMarkov xs
+       createMarkov xs
   where key            = [x, head xs]
         value          = xs `chatIndex` 1
-        chatIndex xs i = maybeToList $ safeIndex xs i
+        chatIndex ys i = maybeToList $ safeIndex ys i
 
 -- ignore key passed from Map.insertWithKey, check if the value we're adding is already in the Map
 mergeValues :: a -> [String] -> [String] -> [String]
