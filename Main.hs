@@ -3,12 +3,13 @@ import Network
 import System.IO
 import System.Exit
 import System.Time
-import Control.Applicative
+import System.Random
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Arrow (first)
 import Control.Monad (unless)
-import Data.Maybe (maybeToList)
+import Data.Maybe (maybeToList, isNothing)
+import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Control.Exception (bracket,bracket_)
 import qualified Data.Map.Strict as Map
@@ -71,21 +72,44 @@ eval     "!uptime"             = uptime >>= privmsg
 eval     "!getstate"           = get >>= (io . putStr . (++"\n") . show) -- debug function, print markov chain to stdout
 eval []                        = return ()                               -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval x                         = (createMarkov . words) x
+eval x                         = (createMarkov . words) x >> get >>= (markovSpeak . words) x
+
+-- wrapper around markov sentence generation
+markovSpeak :: [String] -> ChatMap -> Net ()
+markovSpeak s c = -- (io (getStdRandom (randomR (0,99))) :: Net Int) >>=
+--  \i -> unless (i>19) $
+    io . putStrLn . show $ searchMap s keys
+--  assembleSentence c $ searchMap s keys
+  where
+    keys = Map.keys c
+
+-- Looks through the input in order, searching the markov map for a corresponding beginning point
+searchMap :: [String] -> [[String]] -> [[String]]
+searchMap []     k = []
+searchMap (x:xs) k = if null results then searchMap xs k else results
+  where
+    results = filter ((x==) . head) k
+
+-- assemble the sentence and write it to the chat
+assembleSentence :: ChatMap -> [[String]] -> Net ()
+assembleSentence c []  = return ()
+assembleSentence c [x] = maybe (return ()) assembleSentence' $ Map.lookup x c
+  where
+    assembleSentence' :: [String] -> Net ()
+    assembleSentence' _ = undefined
+assembleSentence c xs  = undefined
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
-createMarkov [x]    = modify $ Map.insert [x] []
-createMarkov (x:xs) = unless (null value) $
-    do modify $ Map.insertWithKey mergeValues key value
-       createMarkov xs
+createMarkov [x]                                   = modify $ Map.insert [x] []
+createMarkov (x:xs)                                = do
+    modify $ Map.insertWithKey mergeValues key value
+    createMarkov xs
   where key            = [x, head xs]
         value          = xs `chatIndex` 1
         chatIndex ys i = maybeToList $ safeIndex ys i
-
--- ignore key passed from Map.insertWithKey, check if the value we're adding is already in the Map
-mergeValues :: a -> [String] -> [String] -> [String]
-mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
+        -- ignore the key passed from Map.insertWithKey
+        mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
 
 -- safe version of (!!)
 safeIndex :: [a] -> Int -> Maybe a
