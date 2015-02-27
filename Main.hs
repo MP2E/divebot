@@ -78,7 +78,7 @@ eval x                         = (createMarkov . words) x >> get >>= (markovSpea
 markovSpeak :: [String] -> ChatMap -> Net ()
 markovSpeak s c = -- (io (getStdRandom (randomR (0,99))) :: Net Int) >>=
 --  \i -> unless (i>19) $
-    io . putStrLn . show $ searchMap s keys
+    io . print $ searchMap s keys
 --  assembleSentence c $ searchMap s keys
   where
     keys = Map.keys c
@@ -93,21 +93,25 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 -- assemble the sentence and write it to the chat
 assembleSentence :: ChatMap -> [[String]] -> Net ()
 assembleSentence c []  = return ()
-assembleSentence c [x] = maybe (return ()) assembleSentence' $ Map.lookup x c
+assembleSentence c [x] = do
+    sentence <- return (unwords x ++ pureAssemble x)
+    privmsg sentence
   where
-    assembleSentence' :: [String] -> Net ()
-    assembleSentence' _ = undefined
-assembleSentence c xs  = undefined
+    pureAssemble :: [String] -> [String]
+    pureAssemble []     =  error "impossible case in assembleSentence!"
+    pureAssemble [y]    =  y
+    pureAssemble (y:ys) =  y ++ (maybe (head ys) (pureAssemble . (\z -> [head ys, z])) (Map.lookup (y:ys) c))
+assembleSentence c xs   = undefined
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
-createMarkov [x]                                   = modify $ Map.insert [x] []
-createMarkov (x:xs)                                = do
+createMarkov [x]    = modify $ Map.insert [x] []
+createMarkov (x:xs) = do
     modify $ Map.insertWithKey mergeValues key value
     createMarkov xs
-  where key            = [x, head xs]
-        value          = xs `chatIndex` 1
-        chatIndex ys i = maybeToList $ safeIndex ys i
+  where key               = [x, head xs]
+        value             = xs `chatIndex` 1
+        chatIndex ys i    = maybeToList $ safeIndex ys i
         -- ignore the key passed from Map.insertWithKey
         mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
 
