@@ -37,6 +37,7 @@ connect = notify $ do
     t <- getClockTime
     h <- connectTo server (PortNumber (fromIntegral port))
     hSetBuffering h NoBuffering
+    hSetBuffering stdout LineBuffering -- Needs to be explicit under Windows!
     return (Bot h t)
   where
     notify = bracket_
@@ -94,14 +95,14 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 assembleSentence :: ChatMap -> [[String]] -> Net ()
 assembleSentence c []  = return ()
 assembleSentence c [x] = do
-    sentence <- return (unwords x ++ pureAssemble x)
+    sentence <- return . unwords $ x ++ pureAssemble x
     privmsg sentence
   where
     pureAssemble :: [String] -> [String]
     pureAssemble []     =  error "impossible case in assembleSentence!"
-    pureAssemble [y]    =  y
-    pureAssemble (y:ys) =  y ++ (maybe (head ys) (pureAssemble . (\z -> [head ys, z])) (Map.lookup (y:ys) c))
-assembleSentence c xs   = undefined
+    pureAssemble [y]    =  [y]
+    pureAssemble (y:ys) =  [y] ++ (maybe ([head ys]) (pureAssemble . (\z -> [head ys, unwords z])) (Map.lookup (y:ys) c))
+assembleSentence c xs   = error "the universe will explode now, please hold"
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
