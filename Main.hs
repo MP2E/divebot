@@ -10,7 +10,7 @@ import Control.Monad.Reader
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
 import Control.Monad (unless)
-import Data.Maybe (maybeToList, isNothing)
+import Data.Maybe (maybeToList, isNothing, fromJust)
 import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Control.Exception (bracket,bracket_)
@@ -90,23 +90,23 @@ markovSpeak s = do
 assembleSentence :: ChatMap -> [[String]] -> IO String
 assembleSentence c [] = return []
 assembleSentence c xs = do
-    startPoint <- getStdRandom $ randomR (0,m)
+    !startPoint <- getStdRandom $ randomR (0,m)
     fmap unwords $ subAssembler $ xs !! startPoint
   where
     m = length xs - 1
     subAssembler :: [String] -> IO [String]
     subAssembler []     = return []
     subAssembler [y]    = return [y]
-    subAssembler (y:ys) = fmap ([y] ++) $ do
-        let !values = maybeToList $ Map.lookup [y, head ys] c
+    subAssembler (y:ys) = fmap (y:) $ do
+        let !y2     = head ys
+            !values = Map.lookup [y, y2] c
             !m2     = case values of
-                          []     -> -1
-                          [z]    -> length z - 1
-                          (z:zs) -> error "impossible case in m2"
-        if m2 < 0 then return [head ys]
+                          Nothing -> -1
+                          Just z  -> length z - 1
+        if m2 < 0 then return [y2]
         else do
-            point    <- getStdRandom $ randomR (0,m2)
-            subAssembler [head ys, head values !! point]
+            !point    <- getStdRandom $ randomR (0,m2)
+            subAssembler [y2, fromJust values !! point]
 
 -- Looks through the input in order, searching the markov map for a corresponding beginning point
 searchMap :: [String] -> [[String]] -> [[String]]
