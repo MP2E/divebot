@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 import Data.List
 import Network
 import System.IO
@@ -6,6 +7,7 @@ import System.Time
 import System.Random
 import Control.Monad.State
 import Control.Monad.Reader
+import Data.Map.Strict ((!))
 import Control.Arrow (first)
 import Control.Monad (unless)
 import Data.Maybe (maybeToList, isNothing)
@@ -70,19 +72,41 @@ listen h = forever $ do
 eval :: String -> Net ()
 eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
 eval     "!uptime"             = uptime >>= privmsg
-eval     "!getstate"           = get >>= (io . putStr . (++"\n") . show) -- debug function, print markov chain to stdout
+eval     "!getstate"           = get >>= (io . print) -- debug function, print markov chain to stdout
 eval []                        = return ()                               -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval x                         = (createMarkov . words) x >> get >>= (markovSpeak . words) x
+eval x                         = (markovSpeak . words) x >> (createMarkov  . words) x
 
 -- wrapper around markov sentence generation
-markovSpeak :: [String] -> ChatMap -> Net ()
-markovSpeak s c = -- (io (getStdRandom (randomR (0,99))) :: Net Int) >>=
---  \i -> unless (i>19) $
-    io . print $ searchMap s keys
---  assembleSentence c $ searchMap s keys
+markovSpeak :: [String] -> Net ()
+markovSpeak s = do
+--  io $ getStdRandom $ randomR (0,99) :: Net Int
+--  unless (i>19) $ do
+    c <- get
+--  io . print $ searchMap s $ Map.keys c
+    sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
+    unless (null sentence) $ privmsg sentence
+
+assembleSentence :: ChatMap -> [[String]] -> IO String
+assembleSentence c [] = return []
+assembleSentence c xs = do
+    startPoint <- getStdRandom $ randomR (0,m)
+    fmap unwords $ subAssembler $ xs !! startPoint
   where
-    keys = Map.keys c
+    m = length xs - 1
+    subAssembler :: [String] -> IO [String]
+    subAssembler []     = return []
+    subAssembler [y]    = return [y]
+    subAssembler (y:ys) = fmap ([y] ++) $ do
+        let !values = maybeToList $ Map.lookup [y, head ys] c
+            !m2     = case values of
+                          []     -> -1
+                          [z]    -> length z - 1
+                          (z:zs) -> error "impossible case in m2"
+        if m2 < 0 then return [head ys]
+        else do
+            point    <- getStdRandom $ randomR (0,m2)
+            subAssembler [head ys, head values !! point]
 
 -- Looks through the input in order, searching the markov map for a corresponding beginning point
 searchMap :: [String] -> [[String]] -> [[String]]
@@ -90,19 +114,6 @@ searchMap []     k = []
 searchMap (x:xs) k = if null results then searchMap xs k else results
   where
     results = filter ((x==) . head) k
-
--- assemble the sentence and write it to the chat
-assembleSentence :: ChatMap -> [[String]] -> Net ()
-assembleSentence c []  = return ()
-assembleSentence c [x] = do
-    sentence <- return . unwords $ x ++ pureAssemble x
-    privmsg sentence
-  where
-    pureAssemble :: [String] -> [String]
-    pureAssemble []     =  error "impossible case in assembleSentence!"
-    pureAssemble [y]    =  [y]
-    pureAssemble (y:ys) =  [y] ++ (maybe ([head ys]) (pureAssemble . (\z -> [head ys, unwords z])) (Map.lookup (y:ys) c))
-assembleSentence c xs   = error "the universe will explode now, please hold"
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
