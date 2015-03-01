@@ -10,11 +10,13 @@ import Control.Monad.Reader
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
 import Control.Monad (unless)
-import Data.Maybe (maybeToList, isNothing, fromJust)
 import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
-import Control.Exception (bracket,bracket_)
+import Data.Serialize (encode, decode)
+import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
+import Control.Exception (bracket,bracket_)
+import Data.Maybe (maybeToList, isNothing, fromJust)
 
 server = "irc.oftc.net"
 port   = 6667
@@ -72,10 +74,27 @@ listen h = forever $ do
 eval :: String -> Net ()
 eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
 eval     "!uptime"             = uptime >>= privmsg
+eval     "!loadstate"          = readBrain            -- read from file and deserialize markov chain
+eval     "!savestate"          = writeBrain           -- serialize markov chain and write to file
 eval     "!getstate"           = get >>= (io . print) -- debug function, print markov chain to stdout
-eval []                        = return ()                               -- ignore, empty list indicates a status line
+eval []                        = return ()            -- ignore, empty list indicates a status line
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
 eval x                         = (markovSpeak . words) x >> (createMarkov  . words) x
+
+writeBrain :: Net ()
+writeBrain = do
+    c          <- get
+    let !contents = encode c
+    fileHandle <- io $ openBinaryFile "markov_brain.txt" WriteMode
+    io $ hSetBuffering fileHandle NoBuffering
+    io $ BS.hPut fileHandle contents
+
+readBrain :: Net ()
+readBrain = do
+    fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
+    io $ hSetBuffering fileHandle NoBuffering
+    contents   <- io $ BS.hGetContents fileHandle
+    either (io . putStrLn) put $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
@@ -87,13 +106,14 @@ markovSpeak s = do
     sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
     unless (null sentence) $ privmsg sentence
 
+-- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
 assembleSentence c [] = return []
 assembleSentence c xs = do
+    let m = length xs - 1
     !startPoint <- getStdRandom $ randomR (0,m)
     fmap unwords $ subAssembler $ xs !! startPoint
   where
-    m = length xs - 1
     subAssembler :: [String] -> IO [String]
     subAssembler []     = return []
     subAssembler [y]    = return [y]
