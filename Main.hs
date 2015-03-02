@@ -72,14 +72,27 @@ listen h = forever $ do
 
 -- Dispatch a command
 eval :: String -> Net ()
-eval     "!quit"               = write "QUIT" ":Exiting" >> io exitSuccess
-eval     "!uptime"             = uptime >>= privmsg
-eval     "!loadstate"          = readBrain            -- read from file and deserialize markov chain
-eval     "!savestate"          = writeBrain           -- serialize markov chain and write to file
-eval     "!getstate"           = get >>= (io . print) -- debug function, print markov chain to stdout
-eval []                        = return ()            -- ignore, empty list indicates a status line
-eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
-eval x                         = (markovSpeak . words) x >> (createMarkov  . words) x
+eval     "!quit"                      = write "QUIT" ":Exiting" >> io exitSuccess
+eval     "!uptime"                    = uptime >>= privmsg
+eval     "!loadstate"                 = readBrain            -- read from file and deserialize markov chain
+eval     "!savestate"                 = writeBrain           -- serialize markov chain and write to file
+eval     "!getstate"                  = get >>= (io . print) -- debug function, print markov chain to stdout
+eval []                               = return ()            -- ignore, empty list indicates a status line
+eval x | "!parsefile " `isPrefixOf` x = parseChatLog x        -- parse an irssi chatlog to create an initial markov state
+eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
+eval x                                = (markovSpeak . words) x >> (createMarkov  . words) x
+
+parseChatLog :: String -> Net ()
+parseChatLog [] = privmsg "error: enter servername/#channel.log to parse"
+parseChatLog x  = do
+    let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
+        clean x = if statusPred x then [] else (drop 3 $ words x)
+    rawlog <- io $ readLines ("/home/cray/irclogs/" ++ (drop 11 x))
+    sequence_ $ fmap (createMarkov . clean) rawlog
+    privmsg "successfully parsed!"
+
+readLines :: FilePath -> IO [String]
+readLines = fmap lines . readFile
 
 writeBrain :: Net ()
 writeBrain = do
@@ -123,7 +136,8 @@ assembleSentence c xs = do
             !m2     = case values of
                           Nothing -> -1
                           Just z  -> length z - 1
-        if m2 < 0 then return [y2]
+        if m2 < 0
+        then return [y2]
         else do
             !point    <- getStdRandom $ randomR (0,m2)
             subAssembler [y2, fromJust values !! point]
@@ -137,6 +151,7 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
+createMarkov []     = return () -- parseChatLog passes [] if it parses a status line
 createMarkov [x]    = modify $ Map.insert [x] []
 createMarkov (x:xs) = do
     modify $ Map.insertWithKey mergeValues key value
