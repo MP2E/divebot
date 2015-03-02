@@ -77,7 +77,6 @@ eval     "!quit"                      = write "QUIT" ":Exiting" >> io exitSucces
 eval     "!uptime"                    = uptime >>= privmsg
 eval     "!loadstate"                 = readBrain            -- read from file and deserialize markov chain
 eval     "!savestate"                 = writeBrain           -- serialize markov chain and write to file
-eval     "!getstate"                  = get >>= (io . print) -- debug function, print markov chain to stdout
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x        -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
@@ -120,12 +119,11 @@ readBrain = do
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
 markovSpeak s = do
---  io $ getStdRandom $ randomR (0,99) :: Net Int
---  unless (i>19) $ do
-    c <- get
---  io . print $ searchMap s $ Map.keys c
-    sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
-    unless (null sentence) $ privmsg sentence
+    i <- io $ getStdRandom $ randomR (0,99) :: Net Int
+    unless (i>19) $ do
+        c <- get
+        sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
+        unless (null sentence) $ privmsg sentence
 
 -- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
