@@ -5,6 +5,7 @@ import System.IO
 import System.Exit
 import System.Time
 import System.Random
+import Control.Exception
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Map.Strict ((!))
@@ -87,9 +88,16 @@ parseChatLog [] = privmsg "error: enter servername/#channel.log to parse"
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
         clean x = if statusPred x then [] else (drop 3 $ words x)
-    rawlog <- io $ readLines ("/home/cray/irclogs/" ++ (drop 11 x))
-    sequence_ $ fmap (createMarkov . clean) rawlog
-    privmsg "successfully parsed!"
+        f = drop 11 x
+    rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
+                                                                            hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
+                                                                            return [])
+    if null rawlog
+    then
+        privmsg "parse error, chatlog not found or inaccessible"
+    else do
+        sequence_ $ fmap (createMarkov . clean) rawlog
+        privmsg "successfully parsed!"
 
 readLines :: FilePath -> IO [String]
 readLines = fmap lines . readFile
