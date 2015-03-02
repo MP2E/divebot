@@ -159,7 +159,6 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
-createMarkov []     = return () -- parseChatLog passes [] if it parses a status line
 createMarkov [x]    = modify $ Map.insert [x] []
 createMarkov (x:xs) = do
     modify $ Map.insertWithKey mergeValues key value
