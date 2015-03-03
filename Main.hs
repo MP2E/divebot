@@ -6,6 +6,7 @@ import System.Exit
 import System.Time
 import System.Random
 import Control.Exception
+import Data.Char (toLower)
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Map.Strict ((!))
@@ -67,7 +68,7 @@ listen h = forever $ do
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
-    cleanStatus x = if cleanPred x then [] else x -- remove joins, mode changes, and server notifications
+    cleanStatus x = if (cleanPred . fmap toLower $ x) then [] else x -- remove joins, mode changes, and server notifications
     cleanPred x   = ( drop 3 server `isInfixOf` x ) || ( (nick ++ "!~" ++ nick) `isInfixOf` x )
                     || ( "JOIN :" `isInfixOf` x ) -- "dropWhile (/= ':')" in clean removes PARTs
 
@@ -80,7 +81,7 @@ eval     "!savestate"                 = writeBrain           -- serialize markov
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x        -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
-eval x                                = (markovSpeak . words) x >> (createMarkov  . words) x
+eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
 
 parseChatLog :: String -> Net ()
 parseChatLog [] = privmsg "error: enter servername/#channel.log to parse"
