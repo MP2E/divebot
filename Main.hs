@@ -44,6 +44,7 @@ connect = notify $ do
     h <- connectTo server (PortNumber (fromIntegral port))
     hSetBuffering h NoBuffering
     hSetBuffering stdout LineBuffering -- Needs to be explicit under Windows!
+    hSetEncoding stdout utf8
     return (Bot h t)
   where
     notify = bracket_
