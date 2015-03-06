@@ -22,7 +22,7 @@ import Data.Maybe (maybeToList, isNothing, fromJust)
 
 server = "irc.oftc.net"
 port   = 6667
-chan   = "#mp2e-testing"
+chan   = "#noteternityenginerelated"
 nick   = "divebot"
 
 -- The 'Net' type, a wrapper over Reader, State, and IO.
@@ -68,10 +68,10 @@ listen h = forever $ do
   where
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
-    clean         = drop 1 . dropWhile (/= ':') . cleanStatus . drop 1
+    clean         = drop 1 . unwords . drop 3 . words . cleanStatus . drop 1
     cleanStatus x = if (cleanPred . fmap toLower $ x) then [] else x -- remove joins, mode changes, and server notifications
-    cleanPred x   = ( drop 3 server `isInfixOf` x ) || ( (nick ++ "!~" ++ nick) `isInfixOf` x )
-                    || ( "JOIN :" `isInfixOf` x ) -- "dropWhile (/= ':')" in clean removes PARTs
+    cleanPred x   = (drop 3 server `isInfixOf` x) || ((nick ++ "!~" ++ nick) `isInfixOf` x)
+                    || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
@@ -85,7 +85,7 @@ eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
 
 parseChatLog :: String -> Net ()
-parseChatLog [] = privmsg "error: enter servername/#channel.log to parse"
+parseChatLog "!parsefile" = privmsg "error: enter servername/#channel.log to parse"
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
         clean x = if statusPred x then [] else (drop 3 $ words x)
@@ -122,7 +122,7 @@ readBrain = do
 markovSpeak :: [String] -> Net ()
 markovSpeak s = do
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
-    unless (i>19) $ do
+    unless (i>4) $ do
         c <- get
         sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
         unless (null sentence) $ privmsg sentence
