@@ -68,9 +68,9 @@ listen h = forever $ do
   where
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
-    clean         = drop 1 . unwords . drop 3 . words . cleanStatus . drop 1
+    clean         = drop 1 . unwords . drop 3 . words . cleanStatus
     cleanStatus x = if (cleanPred . fmap toLower $ x) then [] else x -- remove joins, mode changes, and server notifications
-    cleanPred x   = (drop 3 server `isInfixOf` x) || ((nick ++ "!~" ++ nick) `isInfixOf` x)
+    cleanPred x   = (drop 3 server `isInfixOf` x) || ("MODE " `isInfixOf` x)
                     || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x)
 
 -- Dispatch a command
@@ -85,7 +85,7 @@ eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
 
 parseChatLog :: String -> Net ()
-parseChatLog "!parsefile" = privmsg "error: enter servername/#channel.log to parse"
+parseChatLog "!parsefile " = privmsg "error: enter servername/#channel.log to parse"
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
         clean x = if statusPred x then [] else (drop 3 $ words x)
