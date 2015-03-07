@@ -71,7 +71,8 @@ listen h = forever $ do
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
     cleanStatus x = if (cleanPred . fmap toLower $ x) then [] else x -- remove joins, mode changes, and server notifications
     cleanPred x   = (drop 3 server `isInfixOf` x) || ("MODE " `isInfixOf` x)
-                    || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x)
+                    || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x) ||
+                    ("QUIT :" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
