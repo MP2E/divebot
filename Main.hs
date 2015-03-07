@@ -80,13 +80,13 @@ eval     "!quit"                      = write "QUIT" ":Exiting" >> io exitSucces
 eval     "!uptime"                    = uptime >>= privmsg
 eval     "!loadstate"                 = readBrain            -- read from file and deserialize markov chain
 eval     "!savestate"                 = writeBrain           -- serialize markov chain and write to file
+eval     "!parsefile"                 = privmsg "error: enter servername/#channel.log to parse"
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x        -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
 
 parseChatLog :: String -> Net ()
-parseChatLog "!parsefile " = privmsg "error: enter servername/#channel.log to parse"
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
         clean x = if statusPred x then [] else (drop 3 $ words x)
