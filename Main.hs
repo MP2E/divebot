@@ -28,14 +28,14 @@ nick   = "divebot"
 -- The 'Net' type, a wrapper over Reader, State, and IO.
 type Net = ReaderT Bot (StateT ChatMap IO)
 data Bot = Bot { socket :: Handle, starttime :: ClockTime }
-type ChatMap = Map.Map [String] [String]
+data ChatMap = ChatMap { markov :: Map.Map [String] [String], entryDb :: [String] }
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
 main = bracket connect disconnect loop
   where
     disconnect = hClose . socket
-    loop r     = evalStateT (runReaderT run r) Map.empty
+    loop r     = evalStateT (runReaderT run r) $ ChatMap { markov = Map.empty, entryDb = [] }
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -82,7 +82,7 @@ eval     "!loadstate"                 = readBrain            -- read from file a
 eval     "!savestate"                 = writeBrain           -- serialize markov chain and write to file
 eval     "!parsefile"                 = privmsg "error: enter servername/#channel.log to parse"
 eval []                               = return ()            -- ignore, empty list indicates a status line
-eval x | "!parsefile " `isPrefixOf` x = parseChatLog x        -- parse an irssi chatlog to create an initial markov state
+eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
 
@@ -107,7 +107,7 @@ readLines = fmap lines . readFile
 writeBrain :: Net ()
 writeBrain = do
     c          <- get
-    let !contents = encode c
+    let !contents = encode $ markov c
     fileHandle <- io $ openBinaryFile "markov_brain.txt" WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
@@ -117,7 +117,7 @@ readBrain = do
     fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) put $ decode contents
+    either (io . putStrLn) (put . ChatMap) $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
@@ -125,7 +125,7 @@ markovSpeak s = do
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
     unless (i>4) $ do
         c <- get
-        sentence <- io . assembleSentence c $ searchMap s $ Map.keys c
+        sentence <- io . assembleSentence c . searchMap s . Map.keys $ markov c
         unless (null sentence) $ privmsg sentence
 
 -- assembles the sentence, taking random paths if the sentence branches
@@ -141,7 +141,7 @@ assembleSentence c xs = do
     subAssembler [y]    = return [y]
     subAssembler (y:ys) = fmap (y:) $ do
         let !y2     = head ys
-            !values = Map.lookup [y, y2] c
+            !values = Map.lookup [y, y2] $ markov c
             !m2     = case values of
                           Nothing -> -1
                           Just z  -> length z - 1
@@ -161,9 +161,9 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
 createMarkov []     = return () -- parseChatLog passes [] if it parses a status line
-createMarkov [x]    = modify $ Map.insert [x] []
+createMarkov [x]    = modify $ ChatMap . Map.insert [x] [] . markov
 createMarkov (x:xs) = do
-    modify $ Map.insertWithKey mergeValues key value
+    modify $ ChatMap . Map.insertWithKey mergeValues key value . markov
     createMarkov xs
   where key               = [x, head xs]
         value             = xs `chatIndex` 1
