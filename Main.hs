@@ -17,10 +17,12 @@ import Control.Monad (unless)
 import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
-import qualified Data.Serialize as C
+import Data.Maybe (maybeToList, isNothing, fromJust)
+
+import qualified Data.Set        as Set
+import qualified Data.Serialize  as C
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
-import Data.Maybe (maybeToList, isNothing, fromJust)
 
 server = "irc.oftc.net"
 port   = 6667
@@ -77,7 +79,7 @@ listen h = forever $ do
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
     cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove joins, mode changes, and server notifications
-    cleanPred x   = (drop 3 server `isInfixOf` x) || ("MODE " `isInfixOf` x)
+    cleanPred x   = (drop 3 server `isInfixOf` x) || ((nick ++ "!~" ++ nick) `isInfixOf` x)
                     || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x) ||
                     ("QUIT :" `isInfixOf` x)
 
@@ -91,7 +93,19 @@ eval     "!parsefile"                 = privmsg "error: enter servername/#channe
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
-eval x                                = (markovSpeak . words) x >> (createMarkov . words) x
+eval x                                = let xs = words x in markovSpeak >> updateEntryDb xs >> createMarkov xs
+
+-- much faster version of nub
+ordNub :: (Ord a) => [a] -> [a]
+ordNub = go Set.empty
+  where
+    go _ [] = []
+    go s (x:xs) = if x `Set.member` s then go s xs
+    else x : go (Set.insert x s) xs
+
+updateEntryDb :: [String] -> Net ()
+updateEntryDb [] = return () -- parseChatLog passes [] if it parses a status line
+updateEntryDb xs = modify $ over entryDb $ ordNub . (head xs :)
 
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
@@ -105,7 +119,7 @@ parseChatLog x  = do
     then
         privmsg "parse error, chatlog not found or inaccessible"
     else do
-        sequence_ $ fmap (createMarkov . clean) rawlog
+        sequence_ $ fmap (\y -> let ys = clean y in updateEntryDb ys >> createMarkov ys) rawlog
         privmsg "successfully parsed!"
 
 readLines :: FilePath -> IO [String]
@@ -127,13 +141,22 @@ readBrain = do
     either (io . putStrLn) put $ decode contents
 
 -- wrapper around markov sentence generation
-markovSpeak :: [String] -> Net ()
-markovSpeak s = do
-    i <- io $ getStdRandom $ randomR (0,99) :: Net Int
-    unless (i>4) $ do
-        c <- get
-        sentence <- io . assembleSentence c . searchMap s . Map.keys $ view markov c
+markovSpeak :: Net ()
+markovSpeak = do
+--  i <- io $ getStdRandom $ randomR (0,99) :: Net Int
+--  unless (i>4) $ do
+        c        <- get
+        start    <- io . searchMap (view entryDb c) $ Map.keys (view markov c)
+        sentence <- io $ assembleSentence c start
         unless (null sentence) $ privmsg sentence
+
+-- grabs random entry-point from entryDb and returns all possible keys
+searchMap :: [String] -> [[String]] -> IO [[String]]
+searchMap [] k = return []
+searchMap xs k = do
+  let !m = length xs - 1
+  !startPoint <- getStdRandom $ randomR (0,m)
+  return $ filter (((xs !! startPoint) ==) . head) k
 
 -- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
@@ -157,13 +180,6 @@ assembleSentence c xs = do
         else do
             !point    <- getStdRandom $ randomR (0,m2)
             subAssembler [y2, fromJust values !! point]
-
--- Looks through the input in order, searching the markov map for a corresponding beginning point
-searchMap :: [String] -> [[String]] -> [[String]]
-searchMap []     k = []
-searchMap (x:xs) k = if null results then searchMap xs k else results
-  where
-    results = filter ((x==) . head) k
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
