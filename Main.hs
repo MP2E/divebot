@@ -121,7 +121,7 @@ readBrain = do
     fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) (modify $ set markov) $ decode contents
+    either (io . putStrLn) (modify . set markov) $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
