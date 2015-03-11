@@ -1,9 +1,10 @@
-{-# LANGUAGE BangPatterns, TemplateHaskell #-}
+{-# LANGUAGE BangPatterns, DeriveGeneric, TemplateHaskell #-}
 import Data.List
 import Network
 import System.IO
 import System.Exit
 import System.Time
+import GHC.Generics
 import Control.Lens
 import System.Random
 import Control.Exception
@@ -16,19 +17,21 @@ import Control.Monad (unless)
 import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
+import qualified Data.Serialize as C
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
 import Data.Maybe (maybeToList, isNothing, fromJust)
 
 server = "irc.oftc.net"
 port   = 6667
-chan   = "#noteternityenginerelated"
+chan   = "#mp2e-testing"
 nick   = "divebot"
 
 data Bot = Bot { _socket :: Handle, _starttime :: ClockTime }
 makeLenses ''Bot
 
-data ChatMap = ChatMap { _markov :: Map.Map [String] [String], _entryDb :: [String] }
+data ChatMap = ChatMap { _markov :: Map.Map [String] [String], _entryDb :: [String] } deriving Generic
+instance C.Serialize ChatMap
 makeLenses ''ChatMap
 
 -- The 'Net' type, a wrapper over Reader, State, and IO.
@@ -111,7 +114,7 @@ readLines = fmap lines . readFile
 writeBrain :: Net ()
 writeBrain = do
     c          <- get
-    let !contents = encode $ view markov c
+    let !contents = encode c
     fileHandle <- io $ openBinaryFile "markov_brain.txt" WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
@@ -121,7 +124,7 @@ readBrain = do
     fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) (modify . set markov) $ decode contents
+    either (io . putStrLn) put $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
