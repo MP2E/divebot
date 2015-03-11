@@ -1,9 +1,10 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, TemplateHaskell #-}
 import Data.List
 import Network
 import System.IO
 import System.Exit
 import System.Time
+import Control.Lens
 import System.Random
 import Control.Exception
 import Data.Char (toLower)
@@ -25,17 +26,21 @@ port   = 6667
 chan   = "#noteternityenginerelated"
 nick   = "divebot"
 
+data Bot = Bot { _socket :: Handle, _starttime :: ClockTime }
+makeLenses ''Bot
+
+data ChatMap = ChatMap { _markov :: Map.Map [String] [String], _entryDb :: [String] }
+makeLenses ''ChatMap
+
 -- The 'Net' type, a wrapper over Reader, State, and IO.
 type Net = ReaderT Bot (StateT ChatMap IO)
-data Bot = Bot { socket :: Handle, starttime :: ClockTime }
-data ChatMap = ChatMap { markov :: Map.Map [String] [String], entryDb :: [String] }
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
 main = bracket connect disconnect loop
   where
-    disconnect = hClose . socket
-    loop r     = evalStateT (runReaderT run r) $ ChatMap { markov = Map.empty, entryDb = [] }
+    disconnect = hClose . (view socket)
+    loop r     = evalStateT (runReaderT run r) $ ChatMap { _markov = Map.empty, _entryDb = [] }
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -57,7 +62,7 @@ run = do
     write "NICK" nick
     write "USER" (nick++" 0 * :MP2E's bot") -- if modifying the user description, only modify after the :
     write "JOIN" chan
-    asks socket >>= listen
+    asks (view socket) >>= listen
 
 -- Process each line from the server
 listen :: Handle -> Net ()
@@ -107,7 +112,7 @@ readLines = fmap lines . readFile
 writeBrain :: Net ()
 writeBrain = do
     c          <- get
-    let !contents = encode $ markov c
+    let !contents = encode $ view markov c
     fileHandle <- io $ openBinaryFile "markov_brain.txt" WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
@@ -117,7 +122,7 @@ readBrain = do
     fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) (put . ChatMap) $ decode contents
+    either (io . putStrLn) (\x -> modify $ set markov x) $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
@@ -125,7 +130,7 @@ markovSpeak s = do
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
     unless (i>4) $ do
         c <- get
-        sentence <- io . assembleSentence c . searchMap s . Map.keys $ markov c
+        sentence <- io . assembleSentence c . searchMap s . Map.keys $ view markov c
         unless (null sentence) $ privmsg sentence
 
 -- assembles the sentence, taking random paths if the sentence branches
@@ -141,7 +146,7 @@ assembleSentence c xs = do
     subAssembler [y]    = return [y]
     subAssembler (y:ys) = fmap (y:) $ do
         let !y2     = head ys
-            !values = Map.lookup [y, y2] $ markov c
+            !values = Map.lookup [y, y2] $ view markov c
             !m2     = case values of
                           Nothing -> -1
                           Just z  -> length z - 1
@@ -161,9 +166,9 @@ searchMap (x:xs) k = if null results then searchMap xs k else results
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
 createMarkov []     = return () -- parseChatLog passes [] if it parses a status line
-createMarkov [x]    = modify $ ChatMap . Map.insert [x] [] . markov
+createMarkov [x]    = modify $ over markov (Map.insert [x] [])
 createMarkov (x:xs) = do
-    modify $ ChatMap . Map.insertWithKey mergeValues key value . markov
+    modify $ over markov (Map.insertWithKey mergeValues key value)
     createMarkov xs
   where key               = [x, head xs]
         value             = xs `chatIndex` 1
@@ -181,7 +186,7 @@ safeIndex (_:xs) n         = safeIndex xs (n-1)
 uptime :: Net String
 uptime = do
     now  <- io getClockTime
-    zero <- asks starttime
+    zero <- asks $ view starttime
     return . pretty $ diffClockTimes now zero
 
 -- Pretty print the date in '1d 9h 9m 17s' format
@@ -202,7 +207,7 @@ privmsg s = write "PRIVMSG" (chan ++ " :" ++ s)
 -- Send a message out to the server we're currently connected to
 write :: String -> String -> Net ()
 write s t = do
-    h <- asks socket
+    h <- asks $ view socket
     io $ hPrintf h "%s %s\r\n" s t
     io $ printf    "> %s %s\n" s t
 
