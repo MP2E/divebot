@@ -115,13 +115,13 @@ writeBrain :: Net ()
 writeBrain = do
     c          <- get
     let !contents = encode c
-    fileHandle <- io $ openBinaryFile "markov_brain.txt" WriteMode
+    fileHandle <- io $ openBinaryFile "markov_brain.brn" WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
 
 readBrain :: Net ()
 readBrain = do
-    fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
+    fileHandle <- io $ openBinaryFile "markov_brain.brn" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
     either (io . putStrLn) put $ decode contents
