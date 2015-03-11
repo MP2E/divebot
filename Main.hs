@@ -18,7 +18,6 @@ import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
-import Control.Exception (bracket,bracket_)
 import Data.Maybe (maybeToList, isNothing, fromJust)
 
 server = "irc.oftc.net"
@@ -39,8 +38,8 @@ type Net = ReaderT Bot (StateT ChatMap IO)
 main :: IO ()
 main = bracket connect disconnect loop
   where
-    disconnect = hClose . (view socket)
-    loop r     = evalStateT (runReaderT run r) $ ChatMap { _markov = Map.empty, _entryDb = [] }
+    disconnect = hClose . view socket
+    loop r     = evalStateT (runReaderT run r) ChatMap { _markov = Map.empty, _entryDb = [] }
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -74,7 +73,7 @@ listen h = forever $ do
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
-    cleanStatus x = if (cleanPred . fmap toLower $ x) then [] else x -- remove joins, mode changes, and server notifications
+    cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove joins, mode changes, and server notifications
     cleanPred x   = (drop 3 server `isInfixOf` x) || ("MODE " `isInfixOf` x)
                     || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x) ||
                     ("QUIT :" `isInfixOf` x)
@@ -94,7 +93,7 @@ eval x                                = (markovSpeak . words) x >> (createMarkov
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
-        clean x = if statusPred x then [] else (drop 3 $ words x)
+        clean x = if statusPred x then [] else drop 3 $ words x
         f = drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
                                                                             hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
@@ -122,7 +121,7 @@ readBrain = do
     fileHandle <- io $ openBinaryFile "markov_brain.txt" ReadMode
     io $ hSetBuffering fileHandle NoBuffering
     contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) (\x -> modify $ set markov x) $ decode contents
+    either (io . putStrLn) (modify $ set markov) $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: [String] -> Net ()
