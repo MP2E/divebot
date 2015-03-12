@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveGeneric, TemplateHaskell #-}
+{-# LANGUAGE DeriveGeneric, TemplateHaskell #-}
 import Data.List
 import Network
 import System.IO
@@ -79,9 +79,10 @@ listen h = forever $ do
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
     cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove joins, mode changes, and server notifications
-    cleanPred x   = (drop 3 server `isInfixOf` x) || ((nick ++ "!~" ++ nick) `isInfixOf` x)
+    cleanPred x   = (drop 3 server `isInfixOf` x) ||
+                    ((nick ++ "!~" ++ nick) `isInfixOf` x)
                     || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x) ||
-                    ("QUIT :" `isInfixOf` x)
+                    ("QUIT :" `isInfixOf` x) ||  ("MODE" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
@@ -128,7 +129,7 @@ readLines = fmap lines . readFile
 writeBrain :: Net ()
 writeBrain = do
     c          <- get
-    let !contents = encode c
+    let contents = encode c
     fileHandle <- io $ openBinaryFile "markov_brain.brn" WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
@@ -154,31 +155,31 @@ markovSpeak = do
 searchMap :: [String] -> [[String]] -> IO [[String]]
 searchMap [] k = return []
 searchMap xs k = do
-  let !m = length xs - 1
-  !startPoint <- getStdRandom $ randomR (0,m)
-  return $ filter (((xs !! startPoint) ==) . head) k
+    let m = length xs - 1
+    startPoint <- getStdRandom $ randomR (0,m)
+    return $ filter (((xs !! startPoint) ==) . head) k
 
 -- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
 assembleSentence c [] = return []
 assembleSentence c xs = do
     let m = length xs - 1
-    !startPoint <- getStdRandom $ randomR (0,m)
+    startPoint <- getStdRandom $ randomR (0,m)
     fmap unwords $ subAssembler $ xs !! startPoint
   where
     subAssembler :: [String] -> IO [String]
     subAssembler []     = return []
     subAssembler [y]    = return [y]
     subAssembler (y:ys) = fmap (y:) $ do
-        let !y2     = head ys
-            !values = Map.lookup [y, y2] $ view markov c
-            !m2     = case values of
-                          Nothing -> -1
-                          Just z  -> length z - 1
+        let y2     = head ys
+            values = Map.lookup [y, y2] $ view markov c
+            m2     = case values of
+                         Nothing -> -1
+                         Just z  -> length z - 1
         if m2 < 0
         then return [y2]
         else do
-            !point    <- getStdRandom $ randomR (0,m2)
+            point    <- getStdRandom $ randomR (0,m2)
             subAssembler [y2, fromJust values !! point]
 
 -- create the markov chain and store it in our ChatMap
