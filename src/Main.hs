@@ -3,7 +3,7 @@ import Data.List
 import Network
 import System.IO
 import System.Exit
-import System.Time
+import Data.Time.Clock
 import GHC.Generics
 import Control.Lens
 import System.Random
@@ -29,7 +29,7 @@ port   = 6667
 chan   = "#mp2e-testing"
 nick   = "divebot"
 
-data Bot = Bot { _socket :: Handle, _starttime :: ClockTime }
+data Bot = Bot { _socket :: Handle, _starttime :: UTCTime }
 makeLenses ''Bot
 
 data ChatMap = ChatMap { _markov :: Map.Map [String] [String], _entryDb :: [String] } deriving Generic
@@ -49,7 +49,7 @@ main = bracket connect disconnect loop
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
 connect = notify $ do
-    t <- getClockTime
+    t <- getCurrentTime
     h <- connectTo server (PortNumber (fromIntegral port))
     hSetBuffering h NoBuffering
     hSetBuffering stdout LineBuffering -- Needs to be explicit under Windows!
@@ -204,12 +204,12 @@ safeIndex (_:xs) n         = safeIndex xs (n-1)
 
 uptime :: Net String
 uptime = do
-    now  <- io getClockTime
+    now  <- io getCurrentTime
     zero <- asks $ view starttime
-    return . pretty $ diffClockTimes now zero
+    return . pretty $ diffUTCTime now zero
 
 -- Pretty print the date in '1d 9h 9m 17s' format
-pretty :: TimeDiff -> String
+pretty :: NominalDiffTime -> String
 pretty td =
   unwords $ fmap (uncurry (++) . first show) $
   if null diffs then [(0,"s")] else diffs
@@ -217,7 +217,7 @@ pretty td =
                                     in (tot',(sec',typ):acc)
         metrics = [(86400,"d"),(3600,"h"),(60,"m"),(1,"s")]
         diffs = filter ((/= 0) . fst) $ reverse $ snd $
-                foldl' merge (tdSec td,[]) metrics
+                foldl' merge (floor td,[]) metrics
 
 -- Send a privmsg to the current chan + server
 privmsg :: String -> Net ()
