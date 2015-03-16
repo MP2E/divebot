@@ -11,15 +11,15 @@ import Control.Exception
 import Data.Char (toLower)
 import Control.Monad.State
 import Control.Monad.Reader
+import Data.Maybe (fromJust)
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
 import Control.Monad (unless)
 import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
-import Data.Maybe (maybeToList, isNothing, fromJust)
 
-import qualified Data.Set        as Set
+import qualified Data.Set        as S
 import qualified Data.Serialize  as C
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
@@ -32,7 +32,7 @@ nick   = "divebot"
 data Bot = Bot { _socket :: Handle, _starttime :: UTCTime }
 makeLenses ''Bot
 
-data ChatMap = ChatMap { _markov :: Map.Map [String] [String], _entryDb :: [String] } deriving Generic
+data ChatMap = ChatMap { _markov :: Map.Map [String] (S.Set String), _entryDb :: S.Set String } deriving Generic
 instance C.Serialize ChatMap
 makeLenses ''ChatMap
 
@@ -44,7 +44,7 @@ main :: IO ()
 main = bracket connect disconnect loop
   where
     disconnect = hClose . view socket
-    loop r     = evalStateT (runReaderT run r) ChatMap { _markov = Map.empty, _entryDb = [] }
+    loop r     = evalStateT (runReaderT run r) ChatMap { _markov = Map.empty, _entryDb = S.empty }
 
 -- Connect to the server and return the initial bot state
 connect :: IO Bot
@@ -78,11 +78,12 @@ listen h = forever $ do
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
-    cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove joins, mode changes, and server notifications
+    cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove anything that satisfies cleanPred
     cleanPred x   = (drop 3 server `isInfixOf` x) ||
-                    ((nick ++ "!~" ++ nick) `isInfixOf` x)
-                    || ("JOIN :" `isInfixOf` x) || ("PART :" `isInfixOf` x) ||
-                    ("QUIT :" `isInfixOf` x) ||  ("MODE" `isInfixOf` x)
+                    ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
+                    ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
+                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x)   ||
+                    ("http://" `isInfixOf` x) || ("https://" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
@@ -96,22 +97,15 @@ eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi c
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = let xs = words x in markovSpeak >> updateEntryDb xs >> createMarkov xs
 
--- much faster version of nub
-ordNub :: (Ord a) => [a] -> [a]
-ordNub = go Set.empty
-  where
-    go _ [] = []
-    go s (x:xs) = if x `Set.member` s then go s xs
-    else x : go (Set.insert x s) xs
-
 updateEntryDb :: [String] -> Net ()
 updateEntryDb [] = return () -- parseChatLog passes [] if it parses a status line
-updateEntryDb xs = modify $ over entryDb $ ordNub . (head xs :)
+updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
-    let statusPred x = ("---" `isPrefixOf` x) || ("-!-" `isInfixOf` x) -- remove lines matching these predicates entirely
-        clean x = if statusPred x then [] else drop 3 $ words x
+    let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) ||
+                       ("http://" `isInfixOf` x) || ("https://" `isInfixOf` x) -- remove lines matching these predicates
+        clean x = if statusPred . fmap toLower $ x then [] else drop 3 $ words x
         f = drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
                                                                             hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
@@ -152,12 +146,12 @@ markovSpeak = do
         unless (null sentence) $ privmsg sentence
 
 -- grabs random entry-point from entryDb and returns all possible keys
-searchMap :: [String] -> [[String]] -> IO [[String]]
-searchMap [] k = return []
-searchMap xs k = do
-    let m = length xs - 1
+searchMap :: S.Set String -> [[String]] -> IO [[String]]
+searchMap xs k | S.null xs = return []
+searchMap xs k             = do
+    let m = length (S.toList xs) - 1
     startPoint <- getStdRandom $ randomR (0,m)
-    return $ filter (((xs !! startPoint) ==) . head) k
+    return $ filter (((startPoint `S.elemAt` xs) ==) . head) k
 
 -- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
@@ -180,20 +174,17 @@ assembleSentence c xs = do
         then return [y2]
         else do
             point    <- getStdRandom $ randomR (0,m2)
-            subAssembler [y2, fromJust values !! point]
+            subAssembler [y2, point `S.elemAt` fromJust values]
 
 -- create the markov chain and store it in our ChatMap
 createMarkov :: [String] -> Net ()
 createMarkov []     = return () -- parseChatLog passes [] if it parses a status line
-createMarkov [x]    = modify $ over markov (Map.insert [x] [])
+createMarkov [x]    = modify $ over markov (Map.insert [x] S.empty)
 createMarkov (x:xs) = do
-    modify $ over markov (Map.insertWithKey mergeValues key value)
+    modify $ over markov (Map.insertWith S.union keys $ maybe S.empty S.singleton value)
     createMarkov xs
-  where key               = [x, head xs]
-        value             = xs `chatIndex` 1
-        chatIndex ys i    = maybeToList $ safeIndex ys i
-        -- ignore the key passed from Map.insertWithKey
-        mergeValues _ x y = if or ((==) <$> x <*> y) then y else y ++ x
+  where keys              = [x, head xs]
+        value             = xs `safeIndex` 1
 
 -- safe version of (!!)
 safeIndex :: [a] -> Int -> Maybe a
