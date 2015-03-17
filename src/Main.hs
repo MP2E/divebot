@@ -3,10 +3,10 @@ import Data.List
 import Network
 import System.IO
 import System.Exit
-import Data.Time.Clock
 import GHC.Generics
 import Control.Lens
 import System.Random
+import Data.Time.Clock
 import Control.Exception
 import Data.Char (toLower)
 import Control.Monad.State
@@ -15,7 +15,6 @@ import Data.Maybe (fromJust)
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
 import Control.Monad (unless)
-import Control.Applicative ((<$>))
 import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
 
@@ -26,7 +25,7 @@ import qualified Data.Map.Strict as Map
 
 server = "irc.oftc.net"
 port   = 6667
-chan   = "#mp2e-testing"
+chan   = "#noteternityenginerelated"
 nick   = "divebot"
 
 data Bot = Bot { _socket :: Handle, _starttime :: UTCTime }
@@ -138,8 +137,8 @@ readBrain = do
 -- wrapper around markov sentence generation
 markovSpeak :: Net ()
 markovSpeak = do
---  i <- io $ getStdRandom $ randomR (0,99) :: Net Int
---  unless (i>4) $ do
+    i <- io $ getStdRandom $ randomR (0,99) :: Net Int
+    unless (i>4) $ do
         c        <- get
         start    <- io . searchMap (view entryDb c) $ Map.keys (view markov c)
         sentence <- io $ assembleSentence c start
