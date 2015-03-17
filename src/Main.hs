@@ -81,8 +81,7 @@ listen h = forever $ do
     cleanPred x   = (drop 3 server `isInfixOf` x) ||
                     ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
                     ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
-                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x)   ||
-                    ("http://" `isInfixOf` x) || ("https://" `isInfixOf` x)
+                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
@@ -94,7 +93,10 @@ eval     "!parsefile"                 = privmsg "error: enter servername/#channe
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
-eval x                                = let xs = words x in markovSpeak >> updateEntryDb xs >> createMarkov xs
+eval x                                = let xs = (removeLinks . words) x in markovSpeak >> updateEntryDb xs >> createMarkov xs
+
+removeLinks :: [String] -> [String]
+removeLinks = filter $ \x -> not $ ("http://" `isPrefixOf` x) || ("https://" `isPrefixOf` x)
 
 updateEntryDb :: [String] -> Net ()
 updateEntryDb [] = return () -- parseChatLog passes [] if it parses a status line
@@ -102,8 +104,7 @@ updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
-    let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) ||
-                       ("http://" `isInfixOf` x) || ("https://" `isInfixOf` x) -- remove lines matching these predicates
+    let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
         clean x = if statusPred . fmap toLower $ x then [] else drop 3 $ words x
         f = drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
@@ -113,7 +114,7 @@ parseChatLog x  = do
     then
         privmsg "parse error, chatlog not found or inaccessible"
     else do
-        sequence_ $ fmap (\y -> let ys = clean y in updateEntryDb ys >> createMarkov ys) rawlog
+        sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
         privmsg "successfully parsed!"
 
 readLines :: FilePath -> IO [String]
