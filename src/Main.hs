@@ -109,7 +109,7 @@ updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
-        clean x = if statusPred . fmap toLower $ x then [] else drop 3 $ words x
+        clean x = if statusPred $ x then [] else drop 3 $ words x
         f = drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
                                                                             hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
