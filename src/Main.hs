@@ -14,7 +14,7 @@ import Control.Monad.Reader
 import Data.Maybe (fromJust)
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
 
@@ -93,7 +93,12 @@ eval     "!parsefile"                 = privmsg "error: enter servername/#channe
 eval []                               = return ()            -- ignore, empty list indicates a status line
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
-eval x                                = let xs = (removeLinks . words) x in markovSpeak >> updateEntryDb xs >> createMarkov xs
+eval x                                = do
+    let xs = (removeLinks . words) x
+    i <- io $ getStdRandom $ randomR (0,99) :: Net Int
+    when ((i<4) || (nick `isInfixOf` x)) markovSpeak
+    updateEntryDb xs
+    createMarkov xs
 
 removeLinks :: [String] -> [String]
 removeLinks = filter $ \x -> not $ ("http://" `isPrefixOf` x) || ("https://" `isPrefixOf` x)
@@ -138,12 +143,10 @@ readBrain = do
 -- wrapper around markov sentence generation
 markovSpeak :: Net ()
 markovSpeak = do
-    i <- io $ getStdRandom $ randomR (0,99) :: Net Int
-    unless (i>4) $ do
-        c        <- get
-        start    <- io . searchMap (view entryDb c) $ Map.keys (view markov c)
-        sentence <- io $ assembleSentence c start
-        unless (null sentence) $ privmsg sentence
+    c        <- get
+    start    <- io . searchMap (view entryDb c) $ Map.keys (view markov c)
+    sentence <- io $ assembleSentence c start
+    unless (null sentence) $ privmsg sentence
 
 -- grabs random entry-point from entryDb and returns all possible keys
 searchMap :: S.Set String -> [[String]] -> IO [[String]]
