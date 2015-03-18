@@ -8,7 +8,6 @@ import Control.Lens
 import System.Random
 import Data.Time.Clock
 import Control.Exception
-import Data.Char (toLower)
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Maybe (fromJust)
@@ -77,7 +76,7 @@ listen h = forever $ do
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
-    cleanStatus x = if cleanPred . fmap toLower $ x then [] else x -- remove anything that satisfies cleanPred
+    cleanStatus x = if cleanPred $ x then [] else x -- remove anything that satisfies cleanPred
     cleanPred x   = (drop 3 server `isInfixOf` x) ||
                     ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
                     ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
