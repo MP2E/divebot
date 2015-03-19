@@ -76,8 +76,9 @@ listen h = forever $ do
     ping x        = "PING :" `isPrefixOf` x
     pong x        = write "PONG" (':' : drop 6 x)
     clean         = drop 1 . unwords . drop 3 . words . cleanStatus
-    cleanStatus x = if cleanPred $ x then [] else x -- remove anything that satisfies cleanPred
-    cleanPred x   = (drop 3 server `isInfixOf` x) ||
+    cleanStatus x = if cleanPred x then [] else x -- remove anything that satisfies cleanPred
+    cleanPred x   = ((drop 3 server `isInfixOf` x) &&
+                    not (("user" ++ drop 3 server) `isInfixOf` x)) ||
                     ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
                     ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
                     ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x)
@@ -93,9 +94,11 @@ eval []                               = return ()            -- ignore, empty li
 eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
 eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
 eval x                                = do
-    let xs = (removeLinks . words) x
+    let xs          = (sanitize . removeLinks . words) x
+        highlight   = (nick ++ ": ") `isPrefixOf` x
+        sanitize ys = if highlight then drop 1 ys else ys
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
-    when ((i<4) || (nick `isInfixOf` x)) markovSpeak
+    when ((i<4) || highlight) markovSpeak
     updateEntryDb xs
     createMarkov xs
 
@@ -109,7 +112,7 @@ updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
-        clean x = if statusPred $ x then [] else drop 3 $ words x
+        clean x = if statusPred x then [] else drop 3 $ words x
         f = drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
                                                                             hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
