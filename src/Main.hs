@@ -1,5 +1,6 @@
-{-# LANGUAGE DeriveGeneric, TemplateHaskell #-}
-import Data.List
+{-# LANGUAGE DeriveGeneric, TemplateHaskell, OverloadedStrings, RebindableSyntax #-}
+import Prelude hiding ((++))
+import Data.List hiding ((++))
 import Network
 import System.IO
 import System.Exit
@@ -18,9 +19,22 @@ import Text.Printf (hPrintf,printf)
 import Data.Serialize (encode, decode)
 
 import qualified Data.Set        as S
+import qualified Data.Text       as T
+import qualified Data.Text.IO    as T
 import qualified Data.Serialize  as C
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
+
+-- This makes all string literals T.Text automagically (combined with RebindableSyntax)
+fromString :: String -> T.Text
+fromString = T.pack
+
+(++) :: T.Text -> T.Text -> T.Text
+(++) = T.append
+
+ifThenElse :: Bool -> a -> a
+ifThenElse True  x _ = x
+ifThenElse False _ y = y
 
 server = "irc.oftc.net"
 port   = 6667
@@ -31,7 +45,7 @@ brain  = "markov_brain.brn"
 data Bot = Bot { _socket :: Handle, _starttime :: UTCTime }
 makeLenses ''Bot
 
-data ChatMap = ChatMap { _markov :: Map.Map [String] (S.Set String), _entryDb :: S.Set String } deriving Generic
+data ChatMap = ChatMap { _markov :: Map.Map [T.Text] (S.Set T.Text), _entryDb :: S.Set T.Text } deriving Generic
 instance C.Serialize ChatMap
 makeLenses ''ChatMap
 
@@ -56,8 +70,8 @@ connect = notify $ do
     return (Bot h t)
   where
     notify = bracket_
-        (printf "Connecting to %s ... " server >> hFlush stdout)
-        (putStrLn "done.")
+        (printf "Connecting to %s ... " server >> hFlush stdout) -- [TODO] printf must be replaced!
+        (T.putStrLn "done.")
 
 -- Join a channel, and start processing commands
 run :: Net ()
@@ -70,63 +84,63 @@ run = bracket_ readBrain writeBrain $ do
 -- Process each line from the server
 listen :: Handle -> Net ()
 listen h = forever $ do
-    s <- init `fmap` io (hGetLine h)
-    io (putStrLn s)
+    s <- T.init `fmap` io (T.hGetLine h)
+    io (T.putStrLn s)
     if ping s then pong s else eval (clean s)
   where
-    ping x        = "PING :" `isPrefixOf` x
-    pong x        = write "PONG" (':' : drop 6 x)
-    clean         = drop 1 . unwords . drop 3 . words . cleanStatus
+    ping x        = "PING :" `T.isPrefixOf` x
+    pong x        = write "PONG" (':' : T.drop 6 x)
+    clean         = T.drop 1 . T.unwords . T.drop 3 . T.words . cleanStatus
     cleanStatus x = if cleanPred x then [] else x -- remove anything that satisfies cleanPred
-    cleanPred x   = ((drop 3 server `isInfixOf` x) &&
-                    not (("user" ++ drop 3 server) `isInfixOf` x)) ||
-                    ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
-                    ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
-                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x) ||
-                    ("NICK :" `isInfixOf` x)
+    cleanPred x   = ((T.drop 3 server `T.isInfixOf` x) &&
+                    not (("user" ++ T.drop 3 server) `T.isInfixOf` x)) ||
+                    ((nick ++ "!~" ++ nick) `T.isInfixOf` x) ||
+                    ("JOIN :" `T.isInfixOf` x)  || ("PART :" `T.isInfixOf` x) ||
+                    ("QUIT :" `T.isInfixOf` x)  || ("MODE" `T.isInfixOf` x) ||
+                    ("NICK :" `T.isInfixOf` x)
 
 -- Dispatch a command
-eval :: String -> Net ()
-eval     "!quit"                      = write "QUIT" ":Exiting" >> io exitSuccess
-eval     "!uptime"                    = uptime >>= privmsg
-eval     "!loadstate"                 = readBrain            -- read from file and deserialize markov chain
-eval     "!savestate"                 = writeBrain           -- serialize markov chain and write to file
-eval     "!parsefile"                 = privmsg "error: enter servername/#channel.log to parse"
-eval []                               = return ()            -- ignore, empty list indicates a status line
-eval x | "!parsefile " `isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
-eval x | "!id " `isPrefixOf` x        = privmsg (drop 4 x)
-eval x                                = do
-    let xs          = (sanitize . removeLinks . words) x
-        highlight   = (nick ++ ": ") `isPrefixOf` x
+eval :: T.Text -> Net ()
+eval     "!quit"                        = write "QUIT" ":Exiting" >> io exitSuccess
+eval     "!uptime"                      = uptime >>= privmsg
+eval     "!loadstate"                   = readBrain            -- read from file and deserialize markov chain
+eval     "!savestate"                   = writeBrain           -- serialize markov chain and write to file
+eval     "!parsefile"                   = privmsg "error: enter servername/#channel.log to parse"
+eval []                                 = return ()            -- ignore, empty list indicates a status line
+eval x | "!parsefile " `T.isPrefixOf` x = parseChatLog x       -- parse an irssi chatlog to create an initial markov state
+eval x | "!id " `T.isPrefixOf` x        = privmsg (drop 4 x)
+eval x                                  = do
+    let xs          = (sanitize . removeLinks . T.words) x
+        highlight   = (nick ++ ": ") `T.isPrefixOf` x
         sanitize ys = if highlight then drop 1 ys else ys
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
     when ((i<4) || highlight) markovSpeak
     updateEntryDb xs
     createMarkov xs
 
-removeLinks :: [String] -> [String]
-removeLinks = filter $ \x -> not $ ("http://" `isPrefixOf` x) || ("https://" `isPrefixOf` x)
+removeLinks :: [T.Text] -> [T.Text]
+removeLinks = T.filter $ \x -> not $ ("http://" `T.isPrefixOf` x) || ("https://" `T.isPrefixOf` x)
 
-updateEntryDb :: [String] -> Net ()
+updateEntryDb :: [T.Text] -> Net ()
 updateEntryDb [] = return () -- parseChatLog passes [] if it parses a status line
 updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 
 parseChatLog :: String -> Net ()
 parseChatLog x  = do
-    let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
-        clean x = if statusPred x then [] else drop 3 $ words x
-        f = drop 11 x
+    let statusPred x = ("---" `T.isPrefixOf` x)    || ("-!-" `T.isInfixOf` x) -- remove lines matching these predicates
+        clean x = if statusPred x then [] else T.drop 3 $ T.words x
+        f = T.drop 11 x
     rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f))
               (\e -> do let err = show (e :: IOError)
-                        hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
-                        return [])
-    if null rawlog
+                        T.hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
+                        return T.empty)
+    if T.null rawlog
     then privmsg "parse error, chatlog not found or inaccessible"
     else do sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
             privmsg "successfully parsed!"
 
-readLines :: FilePath -> IO [String]
-readLines = fmap lines . readFile
+readLines :: FilePath -> IO [T.Text]
+readLines = fmap T.lines . T.readFile
 
 writeBrain :: Net ()
 writeBrain = do
@@ -156,12 +170,12 @@ markovSpeak = do
     unless (null sentence) $ privmsg sentence
 
 -- grabs random entry-point from entryDb and returns all possible keys
-searchMap :: S.Set String -> [[String]] -> IO [[String]]
+searchMap :: S.Set T.Text -> [[T.Text]] -> IO [[T.Text]]
 searchMap xs k | S.null xs = return []
 searchMap xs k             = do
     let m = length (S.toList xs) - 1
     startPoint <- getStdRandom $ randomR (0,m)
-    return $ filter (((startPoint `S.elemAt` xs) ==) . head) k
+    return $ T.filter (((startPoint `S.elemAt` xs) ==) . head) k
 
 -- assembles the sentence, taking random paths if the sentence branches
 assembleSentence :: ChatMap -> [[String]] -> IO String
