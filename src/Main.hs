@@ -7,7 +7,7 @@ import GHC.Generics
 import Control.Lens
 import System.Random
 import Data.Time.Clock
-import Control.Exception
+import Control.Monad.Catch
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Maybe (fromJust)
@@ -50,7 +50,7 @@ connect = notify $ do
     t <- getCurrentTime
     h <- connectTo server (PortNumber (fromIntegral port))
     hSetBuffering h NoBuffering
-    hSetBuffering stdout LineBuffering -- Needs to be explicit under Windows!
+    hSetBuffering stdout LineBuffering -- Needs to be explicit on Windows!
     hSetEncoding stdout utf8
     return (Bot h t)
   where
@@ -60,7 +60,7 @@ connect = notify $ do
 
 -- Join a channel, and start processing commands
 run :: Net ()
-run = do
+run = bracket_ readBrain writeBrain $ do
     write "NICK" nick
     write "USER" (nick++" 0 * :MP2E's bot") -- if modifying the user description, only modify after the :
     write "JOIN" chan
@@ -81,7 +81,8 @@ listen h = forever $ do
                     not (("user" ++ drop 3 server) `isInfixOf` x)) ||
                     ((nick ++ "!~" ++ nick) `isInfixOf` x) ||
                     ("JOIN :" `isInfixOf` x)  || ("PART :" `isInfixOf` x) ||
-                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x)
+                    ("QUIT :" `isInfixOf` x)  || ("MODE" `isInfixOf` x) ||
+                    ("NICK :" `isInfixOf` x)
 
 -- Dispatch a command
 eval :: String -> Net ()
@@ -114,7 +115,7 @@ parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
         clean x = if statusPred x then [] else drop 3 $ words x
         f = drop 11 x
-    rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOException)
+    rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOError)
                                                                             hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
                                                                             return [])
     if null rawlog
