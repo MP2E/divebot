@@ -26,6 +26,7 @@ server = "irc.oftc.net"
 port   = 6667
 chan   = "#noteternityenginerelated"
 nick   = "divebot"
+brain  = "markov_brain.brn"
 
 data Bot = Bot { _socket :: Handle, _starttime :: UTCTime }
 makeLenses ''Bot
@@ -115,15 +116,14 @@ parseChatLog x  = do
     let statusPred x = ("---" `isPrefixOf` x)    || ("-!-" `isInfixOf` x) -- remove lines matching these predicates
         clean x = if statusPred x then [] else drop 3 $ words x
         f = drop 11 x
-    rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f)) (\e -> do let err = show (e :: IOError)
-                                                                            hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
-                                                                            return [])
+    rawlog <- io $ catch (readLines ("/home/cray/irclogs/" ++ f))
+              (\e -> do let err = show (e :: IOError)
+                        hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err)
+                        return [])
     if null rawlog
-    then
-        privmsg "parse error, chatlog not found or inaccessible"
-    else do
-        sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
-        privmsg "successfully parsed!"
+    then privmsg "parse error, chatlog not found or inaccessible"
+    else do sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
+            privmsg "successfully parsed!"
 
 readLines :: FilePath -> IO [String]
 readLines = fmap lines . readFile
@@ -132,16 +132,20 @@ writeBrain :: Net ()
 writeBrain = do
     c          <- get
     let contents = encode c
-    fileHandle <- io $ openBinaryFile "markov_brain.brn" WriteMode
+    fileHandle <- io $ openBinaryFile brain WriteMode
     io $ hSetBuffering fileHandle NoBuffering
     io $ BS.hPut fileHandle contents
 
 readBrain :: Net ()
 readBrain = do
-    fileHandle <- io $ openBinaryFile "markov_brain.brn" ReadMode
-    io $ hSetBuffering fileHandle NoBuffering
-    contents   <- io $ BS.hGetContents fileHandle
-    either (io . putStrLn) put $ decode contents
+    fileHandle <- io $ catch (openBinaryFile brain ReadMode)
+                  (\e -> do let err = show (e :: IOError)
+                            hPutStr stderr ("Warning: Couldn't open " ++ brain ++ ": " ++ err)
+                            return stdin) -- I feel like this is kind of horrible.
+    unless (fileHandle == stdin) $
+      do io $ hSetBuffering fileHandle NoBuffering
+         contents   <- io $ BS.hGetContents fileHandle
+         either (io . putStrLn) put $ decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: Net ()
