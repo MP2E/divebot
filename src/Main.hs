@@ -124,26 +124,19 @@ parseChatLog x  = do
     let statusPred x = ("---" `T.isPrefixOf` x)    || ("-!-" `T.isInfixOf` x) -- remove lines matching these predicates
         clean x = if statusPred x then [] else drop 3 $ T.words x
         f = T.drop 11 x
-    rawlog <- io $ catch (readLines $ T.unpack ("/home/cray/irclogs/" ++ f))
+    rawlog <- io $ catch (fmap T.lines $ T.readFile $ T.unpack ("/home/cray/irclogs/" ++ f))
               (\e -> do let err = show (e :: IOError)
                         T.hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err ++ "\n")
-                        return [T.empty])
+                        return [])
     if null rawlog
     then privmsg "parse error, chatlog not found or inaccessible"
     else do sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
             privmsg "successfully parsed!"
 
-readLines :: FilePath -> IO [T.Text]
-readLines fp = do file <- openFile fp ReadMode
-                  fmap T.lines . T.hGetContents $ file
-
 writeBrain :: Net ()
 writeBrain = do
     c          <- get
-    let contents = encode c
-    fileHandle <- io $ openBinaryFile brain WriteMode
-    io $ hSetBuffering fileHandle NoBuffering
-    io $ BS.hPut fileHandle contents
+    io $ BS.writeFile brain $ encode c
 
 readBrain :: Net ()
 readBrain = do
@@ -154,7 +147,7 @@ readBrain = do
     unless (fileHandle == stdin) $
       do io $ hSetBuffering fileHandle NoBuffering
          contents   <- io $ BS.hGetContents fileHandle
-         either (io . putStrLn) put $ decode contents
+         either (io . putStrLn) put $! decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: Net ()
