@@ -140,14 +140,10 @@ writeBrain = do
 
 readBrain :: Net ()
 readBrain = do
-    fileHandle <- io $ catch (openBinaryFile brain ReadMode)
-                  (\e -> do let err = show (e :: IOError)
-                            T.hPutStr stderr ("Warning: Couldn't open " ++ T.pack brain ++ ": " ++ err ++ "\n")
-                            return stdin) -- I feel like this is kind of horrible.
-    unless (fileHandle == stdin) $
-      do io $ hSetBuffering fileHandle NoBuffering
-         contents   <- io $ BS.hGetContents fileHandle
-         either (io . putStrLn) put $! decode contents
+    res  <- io . try $ BS.readFile brain
+    case res of
+         Left  e -> io $ T.hPutStrLn stderr $ "Warning: Couldn't open " ++ T.pack brain ++ ": " ++ show (e :: IOError)
+         Right contents -> either (io. putStrLn) put $! decode contents
 
 -- wrapper around markov sentence generation
 markovSpeak :: Net ()
