@@ -20,6 +20,7 @@ executable divebot
   main-is:             Main.hs
   -- other-modules:
   other-extensions:    DeriveGeneric, TemplateHaskell
-  build-depends:       base >=4.8 && <4.9, network >=2.6 && <2.7, time >=1.5 && <1.6, lens >=4.8 && <4.9, random >=1.1 && <1.2, mtl >=2.2 && <2.3, containers >=0.5 && <0.6, cereal >=0.4 && <0.5, cereal-text >=0.1 && <0.2, bytestring >=0.10 && <0.11, exceptions >=0.8 && <0.9, text >=1.2 && <1.3, text-format >=0.3 && <0.4, text-show >=0.6 && <0.7
+  build-depends:       base >=4.8 && <4.9, network >=2.6 && <2.7, time >=1.5 && <1.6, lens >=4.8 && <4.9, random >=1.1 && <1.2, mtl >=2.2 && <2.3, containers >=0.5 && <0.6, cereal >=0.4 && <0.5, cereal-text >=0.1 && <0.2, bytestring >=0.10 && <0.11, exceptions >=0.8 && <0.9, text >=1.2 && <1.3, text-format >=0.3 && <0.4, text-show >=0.7 && <0.8
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options: -O2

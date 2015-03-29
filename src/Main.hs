@@ -10,6 +10,7 @@ import Data.Time.Clock
 import Control.Monad.Catch
 import Control.Monad.State
 import Control.Monad.Reader
+import Data.Either (isLeft)
 import Data.Maybe (fromJust)
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
@@ -69,7 +70,7 @@ connect = notify $ do
 
 -- Join a channel, and start processing commands
 run :: Net ()
-run = bracket_ readBrain writeBrain $ do
+run = do
     write "NICK" nick
     write "USER" (nick++" 0 * :MP2E's bot") -- if modifying the user description, only modify after the :
     write "JOIN" chan
@@ -124,14 +125,11 @@ parseChatLog x  = do
     let statusPred x = ("---" `T.isPrefixOf` x)    || ("-!-" `T.isInfixOf` x) -- remove lines matching these predicates
         clean x = if statusPred x then [] else drop 3 $ T.words x
         f = T.drop 11 x
-    rawlog <- io $ catch (fmap T.lines $ T.readFile $ T.unpack ("/home/cray/irclogs/" ++ f))
-              (\e -> do let err = show (e :: IOError)
-                        T.hPutStr stderr ("Warning: Couldn't open " ++ f ++ ": " ++ err ++ "\n")
-                        return [])
-    if null rawlog
-    then privmsg "parse error, chatlog not found or inaccessible"
-    else do sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
-            privmsg "successfully parsed!"
+    res <- io $ try (fmap T.lines $ T.readFile $ T.unpack ("/home/cray/irclogs/" ++ f))
+    case res of
+         Left  e      -> io . T.hPutStrLn stderr $ "Warning: Couldn't open " ++ f ++ ": " ++ show (e :: IOError)
+         Right rawlog -> do sequence_ $ fmap (\y -> let ys = (removeLinks . clean) y in updateEntryDb ys >> createMarkov ys) rawlog
+                            privmsg "successfully parsed!"
 
 writeBrain :: Net ()
 writeBrain = do
