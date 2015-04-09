@@ -10,7 +10,6 @@ import Data.Time.Clock
 import Control.Monad.Catch
 import Control.Monad.State
 import Control.Monad.Reader
-import Data.Either (isLeft)
 import Data.Maybe (fromJust)
 import Data.Map.Strict ((!))
 import Control.Arrow (first)
@@ -33,7 +32,7 @@ import qualified Data.Text.Format as F
 
 server = "irc.oftc.net"
 port   = 6667
-chan   = "#mp2e-testing"
+chan   = "#noteternityenginerelated"
 nick   = "divebot"
 brain  = "markov_brain.brn"
 
@@ -109,7 +108,7 @@ eval x                                  = do
         highlight   = (nick ++ ": ") `T.isPrefixOf` x
         sanitize ys = if highlight then drop 1 ys else ys
     i <- io $ getStdRandom $ randomR (0,99) :: Net Int
-    when ((i<4) || highlight) markovSpeak
+    when ((i<2) || highlight) markovSpeak
     updateEntryDb xs
     createMarkov xs
 

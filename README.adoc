@@ -1,12 +1,18 @@
 = divebot: a simple Haskell IRC Bot
 
 Based off of https://www.haskell.org/haskellwiki/Roll_your_own_IRC_bot[Roll your own IRC bot],
-this project is simply for fun, and to get a stronger grasp of Monad Transformers and sequencing
-IO effects. I'd also like to use QuickCheck to prove properties, and migrate over to Text and use
-criterion to benchmark the difference(learning those in the process, as well)
+this is a fun toy project to get comfortable with many aspects of using Haskell for real world
+application development
+
+== Current features
+- Markov bot
 
 == Planned features
-- Markov bot
+- rewrite around pipes library
+- allow multiple servers/channels
+- make joining more robust (OFTC does not work)
+- permissions system per channel for commands
+- fix potential infinite loop in sentence gen
 - set of useful commands for channel/bot management
 - watch git repos and report on commits
-- simple Haskell evaluator?
+- idgames API and demowar command
