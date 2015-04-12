@@ -1,8 +1,6 @@
-= divebot: a simple Haskell IRC Bot
+= divebot: a toy IRC Bot written in Haskell
 
-Based off of https://www.haskell.org/haskellwiki/Roll_your_own_IRC_bot[Roll your own IRC bot],
-this is a fun toy project to get comfortable with many aspects of using Haskell for real world
-application development
+Undergoing a full rewrite to make divebot much more robust!
 
 == Current features
 - Markov bot
@@ -11,6 +9,7 @@ application development
 - rewrite around pipes library
 - allow multiple servers/channels
 - make joining more robust (OFTC does not work)
+- store markov chain as database on filesystem
 - permissions system per channel for commands
 - fix potential infinite loop in sentence gen
 - set of useful commands for channel/bot management
