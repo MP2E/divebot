@@ -121,8 +121,8 @@ updateEntryDb xs = modify $ over entryDb $ S.insert (head xs)
 
 parseChatLog :: T.Text -> Net ()
 parseChatLog x  = do
-    let statusPred x = ("---" `T.isPrefixOf` x)    || ("-!-" `T.isInfixOf` x) -- remove lines matching these predicates
-        clean x = if statusPred x then [] else drop 3 $ T.words x
+    let statusPred z = ("---" `T.isPrefixOf` z)    || ("-!-" `T.isInfixOf` z) -- remove lines matching these predicates
+        clean s = if statusPred s then [] else drop 3 $ T.words s
         f = T.drop 11 x
     res <- io $ try (fmap T.lines $ T.readFile $ T.unpack ("/home/cray/irclogs/" ++ f))
     case res of
