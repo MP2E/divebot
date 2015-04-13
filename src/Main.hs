@@ -1,10 +1,9 @@
-{-# LANGUAGE TemplateHaskell, OverloadedLists, OverloadedStrings, StandaloneDeriving, GeneralizedNewtypeDeriving, DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell, OverloadedLists, OverloadedStrings #-}
 import Pipes
 import Data.Text
 import Data.Aeson
 import Data.Maybe
 import System.Exit
-import GHC.Generics
 import Data.Text.IO
 import Data.Aeson.TH
 import Control.Monad
@@ -28,9 +27,7 @@ import qualified Data.ByteString.Lazy as B
 import qualified Prelude              as PR
 import qualified Data.Char            as C (toLower)
 
-deriving instance Generic  PortNumber
-deriving instance FromJSON PortNumber
-deriving instance ToJSON   PortNumber
+$(deriveJSON defaultOptions ''PortNumber)
 
 data Server = Server
     { _chatnet  :: Text
@@ -55,8 +52,7 @@ data Bot = Bot { _handle    :: V.Vector Handle
 makeLenses ''Bot
 
 data ChatMap = ChatMap { _markov  :: M.Map (V.Vector Text) (S.Set Text)
-                       , _entryDb :: S.Set Text
-                       } deriving Generic
+                       , _entryDb :: S.Set Text }
 makeLenses ''ChatMap
 
 -- The 'Net' type, a wrapper over Reader and IO.
