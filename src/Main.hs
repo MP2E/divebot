@@ -35,6 +35,7 @@ data Server = Server
     , _port     :: PortNumber
     , _channels :: V.Vector Text
     , _nick     :: Maybe Text }
+
 makeLenses ''Server
 
 $(deriveJSON defaultOptions{fieldLabelModifier = PR.drop 1} ''Server)
@@ -42,17 +43,20 @@ $(deriveJSON defaultOptions{fieldLabelModifier = PR.drop 1} ''Server)
 data Config = Config
     { _globalNick    :: Text
     , _globalServers :: V.Vector Server }
+
 makeLenses ''Config
 
-$(deriveJSON defaultOptions{fieldLabelModifier = (fmap C.toLower) . PR.drop 7} ''Config)
+$(deriveJSON defaultOptions{fieldLabelModifier = fmap C.toLower . PR.drop 7} ''Config)
 
 data Bot = Bot { _handle    :: V.Vector Handle
                , _starttime :: UTCTime
                , _config    :: Config }
+
 makeLenses ''Bot
 
 data ChatMap = ChatMap { _markov  :: M.Map (V.Vector Text) (S.Set Text)
                        , _entryDb :: S.Set Text }
+
 makeLenses ''ChatMap
 
 -- The 'Net' type, a wrapper over Reader and IO.
@@ -61,7 +65,7 @@ type Net = ReaderT Bot IO
 main :: IO ()
 main = do
     c <- cfgHandler
-    let mConfig = (decode c :: Maybe Config)
+    let mConfig = decode c :: Maybe Config
     when (isNothing mConfig) $ do
         hPutStrLn stderr "error: Could not decode config, check for syntax errors or missing fields"
         exitFailure
